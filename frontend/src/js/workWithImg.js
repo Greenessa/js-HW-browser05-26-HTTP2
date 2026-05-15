@@ -2,8 +2,7 @@ import SaveAppState from "./appState";
 
 
 export default class workWithImg {
-  constructor(storage) {
-    // this.saveInStorage = storage;
+  constructor() {
     this.BASE_URL = "http://localhost:7070";
     this.dropzoneEl = document.querySelector(".form-container");
     this.removeEl = document.querySelector(".img-container");
@@ -20,15 +19,9 @@ export default class workWithImg {
   }
 
   async loadImg() {
-    // this.getListImg().then((array) => {
-    //   this.saveAppState.imgArray = array.map((item) => item.src);
-    //   this.addImg(this.saveAppState.imgArray);
-    // })
     try {
       const array = await this.getListImg();
-  
-      this.saveAppState.imgArray = array.map((item) => item.src);
-  
+      this.saveAppState.imgArray = array;
       this.addImg(this.saveAppState.imgArray);
     } catch (error) {
       console.error(error);
@@ -36,7 +29,8 @@ export default class workWithImg {
   }
 
   async getListImg() {
-    const response = await fetch(`${this.BASE_URL}/images`);
+    const response = await fetch(`${this.BASE_URL}/files`);
+    
 
     if (!response.ok) {
       throw new Error("Не удалось загрузить список");
@@ -48,7 +42,7 @@ export default class workWithImg {
   async loadFileOnServer (file) {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch(`${this.BASE_URL}/upload`, {
+    const response = await fetch(`${this.BASE_URL}/files`, {
         method: "POST",
         body: formData,
       });
@@ -60,19 +54,16 @@ export default class workWithImg {
       return result;
     }
   
-    async removeImage (filename) {
-      const response = await fetch(`${this.BASE_URL}/?method=removeImage`, {
-        method: "POST",
-        headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ filename }),
+    async removeImage(id) {
+      const response = await fetch(`${this.BASE_URL}/files/${id}`, {
+        method: "DELETE",
       });
+    
       if (!response.ok) {
-        throw new Error("Не удалось");
+        throw new Error("Не удалось удалить файл");
       }
-      let result = await response.json();
-      return result;
+    
+      return await response.json();
     }
    
 
@@ -88,7 +79,8 @@ export default class workWithImg {
         // Здесь надо oтобразить файл в контейнере
         this.loadFileOnServer(file).then((x) => {
           console.log(x.src);
-          this.saveAppState.imgArray.push(x.src);
+          // this.saveAppState.imgArray.push(x.src);
+          this.saveAppState.imgArray.push(x);
           this.addImg(this.saveAppState.imgArray);
           console.log(this.saveAppState.imgArray);
         });
@@ -107,7 +99,8 @@ export default class workWithImg {
       if (files.length > 0) {
         console.log("Файл получен:", files[0].name);
         this.loadFileOnServer(files[0]).then((x) => {
-          this.saveAppState.imgArray.push(x.src);
+          // this.saveAppState.imgArray.push(x.src);
+          this.saveAppState.imgArray.push(x);
           this.addImg(this.saveAppState.imgArray);
         });
         // Здесь надо oтобразить файл в контейнере ниже (или прочитать его через FileReader)
@@ -127,9 +120,10 @@ export default class workWithImg {
     for (const img of array) {
       let imgNewEl = document.createElement("div");
       imgNewEl.classList.add("container");
+      imgNewEl.dataset.id = img.id;
+    
       let srsEl = document.createElement("img");
       srsEl.classList.add("picture");
-
       let butEl = document.createElement("button");
       butEl.classList.add("delete-button");
       butEl.innerHTML = "&times;";
@@ -154,27 +148,24 @@ export default class workWithImg {
         // Не добавляем контейнер в DOM, если изображение не загрузилось
       };
       // Устанавливаем источник изображения после добавления обработчиков
-      srsEl.src = img;
+      srsEl.src = img.src;
     }
   }
 
   removeImg(event) {
-    // console.log(this.saveAppState.imgArray);
-    if (event.target.classList.contains("delete-button")) {
-      let srcImg = event.target
-        .closest(".container")
-        .querySelector(".picture")
-        .getAttribute("src");
-      event.target.closest(".container").remove();
-      let name = srcImg.split('/').pop();
-      this.removeImage(name).then((n)=> {
-        console.log(n)
-      })
-      for (let i = this.saveAppState.imgArray.length - 1; i >= 0; i--) {
-        if (this.saveAppState.imgArray[i] === srcImg) {
-          this.saveAppState.imgArray.splice(i, 1);
-        }
-      }
+    if (!event.target.classList.contains("delete-button")) {
+      return;
     }
+  
+    const container = event.target.closest(".container");
+    const id = container.dataset.id;
+  
+    this.removeImage(id).then(() => {
+      container.remove();
+  
+      this.saveAppState.imgArray = this.saveAppState.imgArray.filter(
+        (img) => img.id !== id,
+      );
+    });
   }
 }

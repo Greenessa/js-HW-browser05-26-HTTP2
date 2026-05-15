@@ -1,110 +1,124 @@
-import http from 'http';
-import Koa from 'koa';
-import koaBody from 'koa-body';
-import cors from '@koa/cors';
-import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
-import fs from 'fs';
-import fsp from 'fs/promises';
-import serve from 'koa-static';
-
-
-let list = [];
-
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
-}
+import http from "http";
+import Koa from "koa";
+import koaBody from "koa-body";
+import cors from "@koa/cors";
+import { v4 as uuidv4 } from "uuid";
+import path from "path";
+import fs from "fs";
+import fsp from "fs/promises";
 
 const app = new Koa();
+const port = 7070;
+const uploadDir = path.resolve("uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
 app.use(cors());
-app.use(serve('uploads'));
-app.use(koaBody({
-  urlencoded: true,
-  multipart: true,
-  json: true,
-}));
 
+app.use(
+  koaBody({
+    urlencoded: true,
+    multipart: true,
+    json: true,
+  }),
+);
 
 app.use(async (ctx) => {
-  if (ctx.path === '/upload' && ctx.method === 'POST') {
+  if (ctx.path === "/files" && ctx.method === "GET") {
+    const files = await fsp.readdir(uploadDir);
+
+    const result = files.map((file) => {
+      const id = path.parse(file).name;
+
+      return {
+        id,
+        filename: file,
+        src: `http://localhost:${port}/files/${id}`,
+      };
+    });
+
+    ctx.body = result;
+    return;
+  }
+
+  if (ctx.path === "/files" && ctx.method === "POST") {
     const file = ctx.request.files?.file;
-  
+
     if (!file) {
       ctx.status = 400;
-      ctx.body = { error: 'Файл не получен' };
+      ctx.body = { error: "Файл не получен" };
       return;
     }
-    const ext = path.extname(file.name); 
-    const safeName = `${uuidv4()}${ext}`;
-    const filePath = path.resolve(`uploads/${safeName}`);
 
-    // const safeName = path.basename(file.name);
-    // const filePath = path.resolve(`uploads/${safeName}`);
-  
+    const id = uuidv4();
+    const ext = path.extname(file.name);
+    const filename = `${id}${ext}`;
+    const filePath = path.join(uploadDir, filename);
+
     const reader = fs.createReadStream(file.path);
     const stream = fs.createWriteStream(filePath);
-  
+
     await new Promise((resolve, reject) => {
       reader.pipe(stream);
-      stream.on('finish', resolve);
-      stream.on('error', reject);
-    });
-    list.push({
-      id: uuidv4(),
-      filename: safeName,
-      src: `http://localhost:7070/${safeName}`,
+      stream.on("finish", resolve);
+      stream.on("error", reject);
     });
 
     ctx.body = {
-      status: 'ok',
-      src: `http://localhost:7070/${safeName}`,
-      list
-    };
-    return;
-  }
-  if (ctx.path === '/images' && ctx.method === 'GET') {
-    const files = await fsp.readdir('uploads');
-  
-    ctx.body = files.map((filename) => ({
-      id: filename,
+      id,
       filename,
-      src: `http://localhost:7070/${filename}`,
-    }));
-  
+      src: `http://localhost:${port}/files/${id}`,
+    };
+
     return;
   }
-  if (ctx.request.method === 'POST') {
-    const { method } = ctx.request.query;
-    if (method === 'removeImage') {
-      const { filename } = ctx.request.body;
-      const safePath = path.basename(filename);
-      const filePath = path.resolve(`uploads/${safePath}`);
 
-      try {
-        await fsp.unlink(filePath);
-        list = list.filter((image) => image.filename !== safePath);
-        ctx.body = { status: 'ok' };
-      } catch (err) {
-        ctx.status = 500;
-        ctx.body = { error: 'Не удалось удалить файл' };
-      }
+  if (ctx.path.startsWith("/files/") && ctx.method === "GET") {
+    const id = ctx.path.split("/").pop();
+
+    const files = await fsp.readdir(uploadDir);
+    const filename = files.find((file) => path.parse(file).name === id);
+
+    if (!filename) {
+      ctx.status = 404;
+      ctx.body = { error: "Файл не найден" };
+      return;
     }
+
+    ctx.type = path.extname(filename);
+    ctx.body = fs.createReadStream(path.join(uploadDir, filename));
+    return;
   }
 
-  
+  if (ctx.path.startsWith("/files/") && ctx.method === "DELETE") {
+    const id = ctx.path.split("/").pop();
+
+    const files = await fsp.readdir(uploadDir);
+    const filename = files.find((file) => path.parse(file).name === id);
+
+    if (!filename) {
+      ctx.status = 404;
+      ctx.body = { error: "Файл не найден" };
+      return;
+    }
+
+    await fsp.unlink(path.join(uploadDir, filename));
+
+    ctx.body = { status: "ok" };
+    return;
+  }
+
+  ctx.status = 404;
+  ctx.body = { error: "Endpoint не найден" };
 });
 
-
-
-
-
 const server = http.createServer(app.callback());
-const port = 7070;
 
 server.listen(port, (err) => {
   if (err) {
-    console.log('Error occured:', err);
+    console.log("Error occured:", err);
     return;
   }
 
